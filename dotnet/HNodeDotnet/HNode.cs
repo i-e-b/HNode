@@ -1,4 +1,5 @@
 ﻿using System.Text;
+// ReSharper disable UseObjectOrCollectionInitializer
 
 namespace HNodeDotnet;
 
@@ -7,21 +8,30 @@ namespace HNodeDotnet;
  * Very simple and liberal HTML parser for templating
  * The tree we output is just a set of ranges over the original string.
  * */
-public class HNode {
+public class HNode
+{
+    public enum HNodeType
+    {
     /** The entire document */
-    public const int TypeRoot = 0;
-    /** Text or raw data. Doesn't look like mark-up */
-    public const int TypeText = 1;
-    /** Normal element. Looks like &lt;elem attr>...&lt;/elem> */
-    public const int TypeNode = 2;
-    /** Self-closed element. Looks like &lt;elem attr/> */
-    public const int TypeElem = 3;
-    /** Self-enclosed directive. Looks like &lt;!directive...>*/
-    public const int TypeDirk = 4;
-    /** "Comment" or script. Looks like &lt;!-- ... ---> or &lt;script>...&lt;/script>*/
-    public const int TypeSkit = 5;
+    TypeRoot = 0,
 
-    /** Child nodes. Can be empty, never null */
+    /** Text or raw data. Doesn't look like mark-up */
+    TypeText = 1,
+
+    /** Normal element. Looks like &lt;elem attr>...&lt;/elem> */
+    TypeNode = 2,
+
+    /** Self-closed element. Looks like &lt;elem attr/> */
+    TypeElem = 3,
+
+    /** Self-enclosed directive. Looks like &lt;!directive...>*/
+    TypeDirk = 4,
+
+    /** "Comment" or script. Looks like &lt;!-- ... ---> or &lt;script>...&lt;/script>*/
+    TypeSkit = 5
+}
+
+/** Child nodes. Can be empty, never null */
     public readonly List<HNode> Children = new();
 
     /** parent node. Can be null */
@@ -32,9 +42,12 @@ public class HNode {
 
     /** true if the element tag name starts with '_' */
     public bool IsUnderscored;
+    
+    /** true if any problems were found in this node */
+    public bool Errors;
 
     /** Parser type of this node */
-    public int Type;
+    public HNodeType Type;
 
     /** start of outer HTML (total span of this node, including children) */
     public int SrcStart;
@@ -53,7 +66,7 @@ public class HNode {
         ParseRecursive(basis, src, 0);
         basis.ContStart = basis.SrcStart = 0;
         basis.ContEnd = basis.SrcEnd = src.Length - 1;
-        basis.Type = TypeRoot;
+        basis.Type = HNodeType.TypeRoot;
 
         return basis;
     }
@@ -73,7 +86,7 @@ public class HNode {
     /// Render this node and its children as HTML/XML.
     /// The text is recovered from the original input string.
     /// </summary>
-    public string ToHtmlString()
+    public string SourceString()
     {
         return Src.Substring(SrcStart, 1 + SrcEnd - SrcStart);
     }
@@ -81,12 +94,12 @@ public class HNode {
     public override string ToString(){
         var typeStr = Type switch
         {
-            TypeNode => "node",
-            TypeElem => "elem",
-            TypeSkit => "raw",
-            TypeDirk => "directive",
-            TypeRoot => "root",
-            TypeText => "text",
+            HNodeType.TypeNode => "node",
+            HNodeType.TypeElem => "elem",
+            HNodeType.TypeSkit => "raw",
+            HNodeType.TypeDirk => "directive",
+            HNodeType.TypeRoot => "root",
+            HNodeType.TypeText => "text",
             _ => "?"
         };
         if (Children.Count < 1) {
@@ -99,8 +112,7 @@ public class HNode {
         return typeStr + ", " + Src.Substring(SrcStart, ContStart-SrcStart) + "; contains " + Children.Count;
     }
 
-    //region internals
-
+    #region internals
 
     private static void InnerTextRecursive(HNode node, StringBuilder outp) {
         if (node.Children.Count < 1) {
@@ -130,9 +142,10 @@ public class HNode {
     protected HNode(HNode? parent, string src){
         Parent=parent;
         IsUnderscored = false;
+        Errors = false;
         Src = src;
     }
-    protected HNode(HNode parent, int srcStart, int contStart, int contEnd, int srcEnd, int type){
+    protected HNode(HNode parent, int srcStart, int contStart, int contEnd, int srcEnd, HNodeType type){
         IsUnderscored = false;
         Parent = parent;Src = parent.Src;Type = type;
         SrcStart = srcStart;ContStart = contStart;ContEnd = contEnd;SrcEnd = srcEnd;
@@ -172,7 +185,7 @@ public class HNode {
                 TextChild(target, left, lastIndex);
                 return lastIndex + 1; // return because it's broken.
             }
-            switch (src[leftAngle+1])
+            switch (src[leftAngle+1]) // what comes after the '<'
             {
                 case '/':
                 {
@@ -185,8 +198,12 @@ public class HNode {
                     // end of our own tag
                     target.SrcEnd = rightAngle;
                     target.ContEnd = leftAngle - 1;
-                    if (target.ContEnd == 0) target.ContEnd = -1;
+                    //if (target.ContEnd == 0) target.ContEnd = -1;
+                    
+                    //Console.WriteLine("?");
+                    Console.WriteLine($"TAG END? '{src.Substring(leftAngle, rightAngle + 1 - leftAngle)}'");
                     // TODO: unwind until we get to a matching tag, to handle bad markup.
+                    
                     return rightAngle + 1; // return because it's the end of this tag.
                 }
                 case '!':
@@ -224,22 +241,24 @@ public class HNode {
 
             // If there is any content up to this point, add it as a 'text' child
             if (leftAngle > left){
-                TextChild(target, left, leftAngle - 1);
+                TextChild(target, left, leftAngle - 1); // this includes whitespace
             }
 
             // Start the child node and recurse it
             var node = new HNode(target, target.Src);
-            node.Type = TypeNode;
+            node.Type = HNodeType.TypeNode;
             node.IsUnderscored = src[leftAngle + 1] == '_';
             node.SrcStart = leftAngle;
+            
+            // TODO: keep track of the stack of nodes, so we can auto-close if we have <a><b><c></a>
             left = ParseRecursive(node, src, rightAngle + 1);
-            if (node.ContEnd < 1 || node.SrcEnd < 1){
+            if (node.ContEnd < 1 || node.SrcEnd < 1){ // couldn't find a valid end-of-node
                 // Add logging or reporting here
+                Console.WriteLine($"BAD NODE: '{src.Substring(node.SrcStart, left - node.SrcStart)}'");
+                node.Errors = true;
             }
-            else
-            {
-                target.Children.Add(node);
-            }
+            
+            target.Children.Add(node);
         }
         return left;
     }
@@ -257,22 +276,22 @@ public class HNode {
         var right = target.Src.IndexOf(terminator, left, StringComparison.Ordinal);
         if (right == NotFound) right = target.Src.Length;
         else right += terminator.Length;
-        target.Children.Add(new HNode(target, left, right,right,right, TypeSkit));
+        target.Children.Add(new HNode(target, left, right,right,right, HNodeType.TypeSkit));
         return right;
     }
 
     private static void ElemChild(HNode target, int left, int right) {
-        target.Children.Add(new HNode(target, left, right+1, right+1, right, TypeElem));
+        target.Children.Add(new HNode(target, left, right+1, right+1, right, HNodeType.TypeElem));
     }
 
     private static void DirectiveChild(HNode target, int left, int right) {
-        target.Children.Add(new HNode(target, left, right, right, right, TypeDirk));
+        target.Children.Add(new HNode(target, left, right, right, right, HNodeType.TypeDirk));
     }
 
     private static void TextChild(HNode target, int left, int right) {
-        target.Children.Add(new HNode(target, left, left, right, right, TypeText));
+        target.Children.Add(new HNode(target, left, left, right, right, HNodeType.TypeText));
     }
 
 
-    //endregion
+    #endregion
 }
