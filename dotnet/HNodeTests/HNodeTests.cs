@@ -11,7 +11,7 @@ public class HNodeTests
    {
       var doc = HNode.Parse(SimpleHtmlDoc);
       Assert.That(doc, Is.Not.Null, "result should not be null");
-      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.TypeRoot), "result node should be the document root");
+      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.Root), "result node should be the document root");
       DumpNodesRec(doc, 0);
       
       var result = doc.SourceString();
@@ -24,7 +24,7 @@ public class HNodeTests
    {
       var doc = HNode.Parse(ModernHtmlDoc);
       Assert.That(doc, Is.Not.Null, "result should not be null");
-      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.TypeRoot), "result node should be the document root");
+      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.Root), "result node should be the document root");
       DumpNodesRec(doc, 0);
       
       var result = doc.SourceString();
@@ -37,7 +37,7 @@ public class HNodeTests
    {
       var doc = HNode.Parse(SimpleXmlFile);
       Assert.That(doc, Is.Not.Null, "result should not be null");
-      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.TypeRoot), "result node should be the document root");
+      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.Root), "result node should be the document root");
       DumpNodesRec(doc, 0);
       
       var result = doc.SourceString();
@@ -50,12 +50,24 @@ public class HNodeTests
    {
       var doc = HNode.Parse(SimpleXmlFragment);
       Assert.That(doc, Is.Not.Null, "result should not be null");
-      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.TypeRoot), "result node should be the document root");
+      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.Root), "result node should be the document root");
       DumpNodesRec(doc, 0);
       
       var result = doc.SourceString();
       Console.WriteLine(result);
       Assert.That(result, Is.EqualTo(SimpleXmlFragment), "root node should encompass entire document");
+   }
+
+   [Test]
+   public void can_get_text_from_nodes()
+   {
+      var doc = HNode.Parse(SimpleHtmlDoc);
+      Assert.That(doc, Is.Not.Null, "result should not be null");
+      Assert.That(doc.Type, Is.EqualTo(HNode.HNodeType.Root), "result node should be the document root");
+      DumpNodesRec(doc, 0);
+      
+      Console.WriteLine(doc.InnerText());
+      Assert.That(doc.InnerText(), Is.EqualTo("A very simple documentDocumentThis is a simple sample"), "should get only content text");
    }
 
 
@@ -64,7 +76,9 @@ public class HNodeTests
    {
       var doc = HNode.Parse(ModernHtmlDoc); // HTML5 is harder to parse than HTML4, due to the unclosed 'elements', like <meta charset="utf-8">
       
+      // TODO: Need to check that the <head><...><...></head> pattern works (not good XML)
       DumpNodesRec(doc, 0);
+      Assert.Inconclusive();
    }
 
    private static void DumpNodesRec(HNode node, int depth)
@@ -74,22 +88,22 @@ public class HNodeTests
       
       switch (node.Type)
       {
-         case HNode.HNodeType.TypeRoot:
+         case HNode.HNodeType.Root:
             Console.WriteLine("Root");
             break;
-         case HNode.HNodeType.TypeText:
+         case HNode.HNodeType.Text:
             Console.WriteLine($"Content: '{OneLine(node.Src.Substring(node.ContStart, node.ContEnd - node.ContStart + 1))}'");
             break;
-         case HNode.HNodeType.TypeNode:
+         case HNode.HNodeType.Node:
             Console.WriteLine($"Node: '{node.Src.Substring(node.SrcStart, node.ContStart - node.SrcStart)}' -> '{node.Src.Substring(node.ContEnd+1, node.SrcEnd - node.ContEnd)}'");
             break;
-         case HNode.HNodeType.TypeElem:
+         case HNode.HNodeType.Element:
             Console.WriteLine($"Element: '{node.Src.Substring(node.SrcStart, node.ContStart - node.SrcStart)}'");
             break;
-         case HNode.HNodeType.TypeDirk:
+         case HNode.HNodeType.Directive:
             Console.WriteLine($"Directive: '{node.Src.Substring(node.SrcStart, node.ContStart - node.SrcStart+1)}'");
             break;
-         case HNode.HNodeType.TypeSkit:
+         case HNode.HNodeType.CommentOrScript:
             Console.WriteLine($"Script or comment: '{node.Src.Substring(node.SrcStart, node.ContStart - node.SrcStart)}'");
             break;
          default:
